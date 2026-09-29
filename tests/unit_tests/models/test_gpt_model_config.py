@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import inspect
+import warnings
 from dataclasses import dataclass
 from unittest.mock import Mock, patch
 
@@ -153,6 +154,32 @@ def test_bridge_can_explicitly_disable_model_config() -> None:
 
     with pytest.raises(ModelConfigNotSupportedError, match="sets MODEL_CONFIG_CLASS to None"):
         UnsupportedBridge().hf_config_to_model_config(object())
+
+
+def test_bridge_without_model_config_mapping_rejects_model_config() -> None:
+    """A family that only configures its provider must not return a generic, silently wrong config."""
+    from transformers import Qwen3Config
+
+    from megatron.bridge.models.qwen.qwen3_bridge import Qwen3Bridge
+
+    hf_config = Qwen3Config(
+        num_hidden_layers=2,
+        hidden_size=64,
+        intermediate_size=128,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        vocab_size=256,
+    )
+
+    with pytest.raises(ModelConfigNotSupportedError, match="has not migrated"):
+        Qwen3Bridge().hf_config_to_model_config(hf_config)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        provider = Qwen3Bridge().provider_bridge(Mock(config=hf_config))
+    assert provider.position_embedding_type == "rope"
+    assert provider.qk_layernorm is True
 
 
 @pytest.mark.skipif(
